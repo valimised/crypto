@@ -1,0 +1,67 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - cyclop # complex functions may exist
+    - depguard # imports are already controlled by gofmt
+    - dupword # no need to inspect source code comments for duplicate words
+    - err113 # use fmt.Errorf for formatted errors and errors.New for plain strings
+    - errcheck # error may be left unchecked if it won't produce an error in runtime
+    - errorlint # suggests to use %w for error formatting, which is not good, since %v should be used
+    - funlen # no limits for function size
+    - gochecknoglobals # global variables are safe, when they are private and initialized once, they improve performance
+    - gocognit # complex functions may exist
+    - gocyclo # complex functions may exist
+    - inamedparam # interface input parameters may be left unnamed
+    - interfacebloat # interface sometimes can be large, depends on a cryptographic primitive
+    - ireturn # interface return parameters may be left unnamed
+    - lll # no limits for source code line length
+    - maintidx # complex functions may exist
+    - mnd # magic numbers can exist if context specific
+    - nakedret # naked return, i.e. named return args may be in place for long and complex functions
+    - nestif # complex decisions may require complex if clauses
+    - nonamedreturns # named returns are sometimes handy (don't use []byte as named return)
+    - revive # variable names sometimes are too algorithm specific rather than Go semantic
+    - varnamelen # no limits for variable name length
+    - wsl # to eliminate such warnings 'if statements should only be cuddled with assignments'
+    - wrapcheck # not all errors should be wrapped into context specific error, some could be passed up the stack 
+  settings:
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - captLocal
+        - commentedOutCode
+        - sloppyReassign
+        - whyNoLint
+    nolintlint:
+      require-specific: true
+      allow-unused: false
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - (.+)_test\.go
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - ivxv.ee/crypto
+  exclusions:
+    generated: lax
+    paths:
+      - (.+)_test\.go
+      - third_party$
+      - builtin$
+      - examples$
+
