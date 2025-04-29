@@ -9,9 +9,9 @@ import (
 	"errors"
 	"io"
 
-	"tivi.io/crypto/group"
-	"tivi.io/crypto/pok/nizk"
-	"tivi.io/crypto/prng"
+	"gitlab.com/tivi-io/crypto/group"
+	"gitlab.com/tivi-io/crypto/pok/nizk"
+	"gitlab.com/tivi-io/crypto/prng"
 )
 
 // CommitOpts are mandatory options that define a commitment context.

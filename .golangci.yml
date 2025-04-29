@@ -56,7 +56,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - ivxv.ee/crypto
+        - github.com/valimised/crypto
   exclusions:
     generated: lax
     paths:

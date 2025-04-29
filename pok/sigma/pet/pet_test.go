@@ -6,10 +6,10 @@ import (
 	"io"
 	"testing"
 
-	"tivi.io/crypto/group/nistec"
-	"tivi.io/crypto/hash"
-	"tivi.io/crypto/pok/commitment/pedersen"
-	"tivi.io/crypto/prng/dprng"
+	"gitlab.com/tivi-io/crypto/group/nistec"
+	"gitlab.com/tivi-io/crypto/hash"
+	"gitlab.com/tivi-io/crypto/pok/commitment/pedersen"
+	"gitlab.com/tivi-io/crypto/prng/dprng"
 )
 
 func ExampleProveVerifyWhenPlaintextInCiphertextAndCommitmentDiffer() {
