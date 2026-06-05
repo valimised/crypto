@@ -9,6 +9,7 @@ import (
 	"gitlab.com/tivi-io/crypto/group/nistec"
 	"gitlab.com/tivi-io/crypto/hash"
 	"gitlab.com/tivi-io/crypto/pok/commitment/pedersen"
+	"gitlab.com/tivi-io/crypto/pok/nizk"
 	"gitlab.com/tivi-io/crypto/prng/dprng"
 )
 
@@ -92,22 +93,20 @@ func ExampleProveVerifyWhenPlaintextInCiphertextAndCommitmentDiffer() {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 	if err != nil {
 		panic(err)
 	}
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
 		panic(err)
 	}
@@ -209,13 +208,12 @@ func TestProveVerify(t *testing.T) {
 
 	// Prover --> Verifier
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 	if err != nil {
@@ -223,9 +221,8 @@ func TestProveVerify(t *testing.T) {
 	}
 
 	// Prover <-- Verifier (note that in case of non-interactive proof, this step is done on Prover side)
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,13 +324,12 @@ func BenchmarkCommit(b *testing.B) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 	var commitment []byte
 	var respOpts *ResponseOpts
@@ -427,13 +423,12 @@ func TestCommitRegression(t *testing.T) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 	var commitment []byte
 	var respOpts *ResponseOpts
@@ -445,207 +440,6 @@ func TestCommitRegression(t *testing.T) {
 	}
 
 	fmt.Fprint(io.Discard, commitment, respOpts, err)
-}
-
-func BenchmarkChallenge(b *testing.B) {
-	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
-
-	plain := []byte("0000.102")
-	m := G.ZeroScalar() // plaintext as scalar
-	_, err := m.SetBytes(plain)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	x := G.ZeroScalar()
-	if _, err := x.SetReader(rand.Reader); err != nil { // private key
-		b.Fatal(err)
-	}
-
-	r := G.ZeroScalar()
-	if _, err := r.SetReader(rand.Reader); err != nil { // encryption randomness
-		b.Fatal(err)
-	}
-
-	// Lifted ElGamal
-	c1 := G.Identity()
-	_, err = c1.GeneratorScale(r) // c1 = g^r
-	if err != nil {
-		b.Fatal(err)
-	}
-	xrm := G.ZeroScalar()
-	if _, err := xrm.Add(r); err != nil { // r
-		b.Fatal(err)
-	}
-	if _, err := xrm.Mul(x); err != nil { // rx
-		b.Fatal(err)
-	}
-	if _, err := xrm.Add(m); err != nil { // rx + m
-		b.Fatal(err)
-	}
-	c2 := G.Identity()
-	if _, err = c2.GeneratorScale(xrm); err != nil { // c2 = g^(rx + m)
-		b.Fatal(err)
-	}
-	one := G.ZeroScalar()
-	if _, err := one.SetBytes([]byte{0x01}); err != nil {
-		b.Fatal(err)
-	}
-	g := G.Identity()
-	if _, err := g.GeneratorScale(one); err != nil { // g
-		b.Fatal(err)
-	}
-	y := G.Identity()
-	if _, err := y.GeneratorScale(x); err != nil { // public key = g^x
-		b.Fatal(err)
-	}
-
-	// Pedersen commitment
-	h := G.Identity()
-	xx, err := x.SetReader(rand.Reader)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	if _, err := h.GeneratorScale(xx); err != nil { // Pedersen random generator h
-		b.Fatal(err)
-	}
-
-	k := G.ZeroScalar()
-	if _, err := k.SetReader(rand.Reader); err != nil { // Pedersen commitment randomness
-		b.Fatal(err)
-	}
-
-	_, err = pedersen.Commit(m, k, &pedersen.CommitmentKey{Group: G, G: g, H: h}) // commitment = (g^m, h^k)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	// Proof that message in a ciphertext is the same as in a commitment
-	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
-	}
-
-	commitment, _, err := Commit(rand.Reader, opts)
-
-	prngs := dprng.New(hash.SHA256)
-	out := make([]byte, (G.OrderBitLen()+7)/8)
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for range b.N {
-		err = Challenge(prngs, out, commitment)
-	}
-	b.StopTimer()
-	// 1056 ns/op	368 B/op	2 allocs/op
-
-	fmt.Fprint(io.Discard, err)
-}
-
-func TestChallengeRegression(t *testing.T) {
-	expected := 2.0
-
-	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
-
-	plain := []byte("0000.102")
-	m := G.ZeroScalar() // plaintext as scalar
-	_, err := m.SetBytes(plain)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	x := G.ZeroScalar()
-	if _, err := x.SetReader(rand.Reader); err != nil { // private key
-		t.Fatal(err)
-	}
-
-	r := G.ZeroScalar()
-	if _, err := r.SetReader(rand.Reader); err != nil { // encryption randomness
-		t.Fatal(err)
-	}
-
-	// Lifted ElGamal
-	c1 := G.Identity()
-	_, err = c1.GeneratorScale(r) // c1 = g^r
-	if err != nil {
-		t.Fatal(err)
-	}
-	xrm := G.ZeroScalar()
-	if _, err := xrm.Add(r); err != nil { // r
-		t.Fatal(err)
-	}
-	if _, err := xrm.Mul(x); err != nil { // rx
-		t.Fatal(err)
-	}
-	if _, err := xrm.Add(m); err != nil { // rx + m
-		t.Fatal(err)
-	}
-	c2 := G.Identity()
-	if _, err = c2.GeneratorScale(xrm); err != nil { // c2 = g^(rx + m)
-		t.Fatal(err)
-	}
-	one := G.ZeroScalar()
-	if _, err := one.SetBytes([]byte{0x01}); err != nil {
-		t.Fatal(err)
-	}
-	g := G.Identity()
-	if _, err := g.GeneratorScale(one); err != nil { // g
-		t.Fatal(err)
-	}
-	y := G.Identity()
-	if _, err := y.GeneratorScale(x); err != nil { // public key = g^x
-		t.Fatal(err)
-	}
-
-	// Pedersen commitment
-	h := G.Identity()
-	xx, err := x.SetReader(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := h.GeneratorScale(xx); err != nil { // Pedersen random generator h
-		t.Fatal(err)
-	}
-
-	k := G.ZeroScalar()
-	if _, err := k.SetReader(rand.Reader); err != nil { // Pedersen commitment randomness
-		t.Fatal(err)
-	}
-
-	_, err = pedersen.Commit(m, k, &pedersen.CommitmentKey{Group: G, G: g, H: h}) // commitment = (g^m, h^k)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Proof that message in a ciphertext is the same as in a commitment
-	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
-	}
-	commitment, _, err := Commit(rand.Reader, opts)
-
-	prngs := dprng.New(hash.SHA256)
-	out := make([]byte, (G.OrderBitLen()+7)/8)
-
-	if allocs := testing.AllocsPerRun(10, func() {
-		err = Challenge(prngs, out, commitment)
-	}); allocs > expected {
-		t.Fatalf("Challenge now requires %0.f heap allocations, while before required %0.f", allocs, expected)
-	}
-
-	fmt.Fprint(io.Discard, err)
 }
 
 func BenchmarkResponse(b *testing.B) {
@@ -724,20 +518,18 @@ func BenchmarkResponse(b *testing.B) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -832,19 +624,17 @@ func TestResponseRegression(t *testing.T) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -935,20 +725,18 @@ func BenchmarkVerify(b *testing.B) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -1055,19 +843,17 @@ func TestVerifyRegression(t *testing.T) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:    G,
-		PK:   y,
-		H:    h,
-		R:    r.Bytes(),
-		R_:   k.Bytes(),
-		M:    m.Bytes(),
-		Prng: dprng.New(hash.SHA256),
+		G:  G,
+		PK: y,
+		H:  h,
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
 	}
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
 		t.Fatal(err)
 	}

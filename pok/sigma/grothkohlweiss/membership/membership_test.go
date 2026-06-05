@@ -2,6 +2,7 @@ package membership
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"fmt"
 	"io"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"gitlab.com/tivi-io/crypto/group/nistec"
 	"gitlab.com/tivi-io/crypto/hash"
 	"gitlab.com/tivi-io/crypto/pok/commitment/pedersen"
+	"gitlab.com/tivi-io/crypto/pok/nizk"
 	"gitlab.com/tivi-io/crypto/prng/dprng"
 )
 
@@ -67,7 +69,12 @@ func ExampleProveVerifyWhenActualChoiceAndCommittedChoiceDiffer() {
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(dprng.New(hash.SHA256), out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen)
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		panic(err)
 	}
@@ -145,7 +152,12 @@ func ExampleProveVerifyWhenActualChoiceIsNotInAPublicList() {
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(dprng.New(hash.SHA256), out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen)
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		panic(err)
 	}
@@ -223,7 +235,12 @@ func ExampleProveVerifyWhenCommittedChoiceIsNotInAPublicList() {
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(dprng.New(hash.SHA256), out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen)
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		panic(err)
 	}
@@ -305,7 +322,12 @@ func TestProveVerify(t *testing.T) {
 
 	// Prover <-- Verifier (note that in case of non-interactive proof, this step is done on Prover side)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(dprng.New(hash.SHA256), out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,124 +459,6 @@ func TestCommitRegression(t *testing.T) {
 	fmt.Fprint(io.Discard, commitment, respOpts, err)
 }
 
-func BenchmarkChallenge(b *testing.B) {
-	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
-	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
-	if err != nil {
-		b.Fatal(err)
-	}
-	x, err := G.ZeroScalar().SetReader(rand.Reader)
-	if err != nil {
-		b.Fatal(err)
-	}
-	g, err := G.Identity().GeneratorScale(one)
-	if err != nil {
-		b.Fatal(err)
-	}
-	h, err := g.GeneratorScale(x)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	publicListSize := 1000
-	publicList := make([][]byte, publicListSize)
-	for i := range publicListSize {
-		publicList[i] = []byte("0000." + fmt.Sprintf("%03d", i))
-
-	}
-
-	choice := 998
-	r, err := G.ZeroScalar().SetReader(rand.Reader)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	commitment, _, err := Commit(rand.Reader,
-		&CommitOpts{
-			Group: G,
-			G:     g,
-			H:     h,
-			R:     r.Bytes(),
-			L:     choice,
-			List:  publicList,
-		})
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	prngs := dprng.New(hash.SHA256)
-	out := make([]byte, (G.OrderBitLen()+7)/8)
-
-	b.ResetTimer()
-	b.ReportAllocs()
-	for range b.N {
-		err = Challenge(prngs, out, commitment...)
-	}
-	b.StopTimer()
-	// 8101 ns/op	4144 B/op	2 allocs/op
-
-	fmt.Fprint(io.Discard, out, err)
-}
-
-func TestChallengeRegression(t *testing.T) {
-	expected := 2.0
-
-	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
-	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
-	if err != nil {
-		t.Fatal(err)
-	}
-	x, err := G.ZeroScalar().SetReader(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g, err := G.Identity().GeneratorScale(one)
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := g.GeneratorScale(x)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	publicListSize := 1000
-	publicList := make([][]byte, publicListSize)
-	for i := range publicListSize {
-		publicList[i] = []byte("0000." + fmt.Sprintf("%03d", i))
-
-	}
-
-	choice := 998
-	r, err := G.ZeroScalar().SetReader(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	commitment, _, err := Commit(rand.Reader,
-		&CommitOpts{
-			Group: G,
-			G:     g,
-			H:     h,
-			R:     r.Bytes(),
-			L:     choice,
-			List:  publicList,
-		})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	prngs := dprng.New(hash.SHA256)
-	out := make([]byte, (G.OrderBitLen()+7)/8)
-
-	if allocs := testing.AllocsPerRun(10, func() {
-		err = Challenge(prngs, out, commitment...)
-	}); allocs > expected {
-		t.Fatalf("Challenge now requires %0.f heap allocations, while before required %0.f", allocs, expected)
-	}
-
-	fmt.Fprint(io.Discard, err)
-}
-
 func BenchmarkResponse(b *testing.B) {
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
 	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
@@ -600,9 +504,13 @@ func BenchmarkResponse(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -666,9 +574,13 @@ func TestResponseRegression(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,9 +640,13 @@ func BenchmarkVerify(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -816,9 +732,13 @@ func TestResponseVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	prngs := dprng.New(hash.SHA256)
 	out := make([]byte, (G.OrderBitLen()+7)/8)
-	err = Challenge(prngs, out, commitment...)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
 		t.Fatal(err)
 	}

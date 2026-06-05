@@ -10,19 +10,16 @@ import (
 	"io"
 
 	"gitlab.com/tivi-io/crypto/group"
-	"gitlab.com/tivi-io/crypto/pok/nizk"
-	"gitlab.com/tivi-io/crypto/prng"
 )
 
 // CommitOpts are mandatory options that define a commitment context.
 type CommitOpts struct {
-	G    group.Group   // group to which all elements in this opts belong
-	PK   group.Element // public key material
-	H    group.Element // commitment key generator h
-	M    []byte        // encoded message m
-	R    []byte        // encryption randomness r
-	R_   []byte        // commitment randomness r'
-	Prng prng.Source   // PRNG source for strong Fiat-Shamir transformation
+	G  group.Group   // group to which all elements in this opts belong
+	PK group.Element // public key material
+	H  group.Element // commitment key generator h
+	M  []byte        // encoded message m
+	R  []byte        // encryption randomness r
+	R_ []byte        // commitment randomness r'
 }
 
 // Commit is used by a prover to commit a knowledge of an encoded message m in a commitment to be the
@@ -92,12 +89,6 @@ func Commit(rand io.Reader, opts *CommitOpts) ([]byte, *ResponseOpts, error) {
 		R__:  r_,
 		R___: r__,
 	}, nil
-}
-
-// Challenge uses PRNG-based Fiat-Shamir transformation to generate a challenge over provided data.
-// Prefer strong Fiat-Shamir transformation over weak one.
-func Challenge(r prng.Source, out []byte, data ...[]byte) error {
-	return nizk.FiatShamirTransform(r, out, data...) // γ
 }
 
 // ResponseOpts are mandatory options that define a response context.

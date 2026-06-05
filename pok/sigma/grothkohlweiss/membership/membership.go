@@ -8,8 +8,6 @@ import (
 	"io"
 
 	"gitlab.com/tivi-io/crypto/group"
-	"gitlab.com/tivi-io/crypto/pok/nizk"
-	"gitlab.com/tivi-io/crypto/prng"
 )
 
 // CommitOpts are mandatory options that define a commitment context.
@@ -224,12 +222,6 @@ func Commit(rand io.Reader, opts *CommitOpts) ([][]byte, *ResponseOpts, error) {
 		T_j:   t_j,
 		P_k:   p_k,
 	}, nil
-}
-
-// Challenge uses PRNG-based Fiat-Shamir transformation to generate a challenge over provided data.
-// Prefer strong Fiat-Shamir transformation over weak one.
-func Challenge(r prng.Source, out []byte, data ...[]byte) error {
-	return nizk.FiatShamirTransform(r, out, data...) // x ← {0,1}^λ
 }
 
 // ResponseOpts are mandatory options that define a response context.
