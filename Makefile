@@ -2,7 +2,7 @@
 ROOTDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 # Golang version
-GOLANG_VERSION := 1.23.0
+GOLANG_VERSION := 1.23.10
 
 # golangci-lint version
 GOLANGCI_LINT_VERSION := 2.0.2
