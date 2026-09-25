@@ -1,13 +1,14 @@
-// Package membership implements Groth-Kohlweiss interactive membership Sigma protocol using
-// Pedersen commitment scheme. Non-interactivity can be achieved if prover calls Commit, Challenge
-// and Response on its side. See also https://eprint.iacr.org/2014/764.pdf.
+// Package membership implements Groth-Kohlweiss membership Sigma protocol using
+// Pedersen commitment scheme. See also https://eprint.iacr.org/2014/764.pdf.
 package membership
 
 import (
 	"errors"
+	"fmt"
 	"io"
 
 	"gitlab.com/tivi-io/crypto/group"
+	"gitlab.com/tivi-io/crypto/pok/commitment/pedersen"
 )
 
 // CommitOpts are mandatory options that define a commitment context.
@@ -21,7 +22,26 @@ type CommitOpts struct {
 }
 
 // Commit is used by a prover to commit a knowledge of an index l of a value from a public list.
+//
+// NB! Commitments' slice returned is a slice of a group of elements, and must be used
+// in [Response] and [Verify] as is.
 func Commit(rand io.Reader, opts *CommitOpts) ([][]byte, *ResponseOpts, error) {
+	if err := (&pedersen.CommitmentKey{
+		Group: opts.Group,
+		G:     opts.G,
+		H:     opts.H,
+	}).Validate(); err != nil {
+		return nil, nil, fmt.Errorf("failed to validate Pedersen commitment key: %v", err)
+	}
+
+	if len(opts.List) == 0 {
+		return nil, nil, errors.New("empty public list")
+	}
+
+	if opts.L < 0 {
+		return nil, nil, errors.New("negative public list index")
+	}
+
 	N := len(opts.List)
 	n := 1
 	twoN := 2 // 2^n
@@ -59,19 +79,19 @@ func Commit(rand io.Reader, opts *CommitOpts) ([][]byte, *ResponseOpts, error) {
 
 	// For j=1, ..., n using k=j-1
 	for j, k, mask := 1, 0, 1; j <= n; j, k, mask = j+1, k+1, mask<<1 { // mask points to the bit of a binary value
-		if r_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil {
+		if r_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil { // [group.Scalar.SetReader] guarantees that rⱼ ∈ ℤq, rⱼ > 0
 			return nil, nil, err
 		}
-		if a_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil {
+		if a_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil { // [group.Scalar.SetReader] guarantees that aⱼ ∈ ℤq, aⱼ > 0
 			return nil, nil, err
 		}
-		if s_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil {
+		if s_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil { // [group.Scalar.SetReader] guarantees that sⱼ ∈ ℤq, sⱼ > 0
 			return nil, nil, err
 		}
-		if t_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil {
+		if t_j[j-1], err = opts.Group.ZeroScalar().SetReader(rand); err != nil { // [group.Scalar.SetReader] guarantees that tⱼ ∈ ℤq, tⱼ > 0
 			return nil, nil, err
 		}
-		if p_k[k], err = opts.Group.ZeroScalar().SetReader(rand); err != nil {
+		if p_k[k], err = opts.Group.ZeroScalar().SetReader(rand); err != nil { // [group.Scalar.SetReader] guarantees that pₖ ∈ ℤq, pₖ > 0
 			return nil, nil, err
 		}
 
@@ -225,6 +245,10 @@ func Commit(rand io.Reader, opts *CommitOpts) ([][]byte, *ResponseOpts, error) {
 }
 
 // ResponseOpts are mandatory options that define a response context.
+//
+// SECURITY NOTE: Response is only intended to be run once per interaction, reusing the same
+// opts twice with a different challenge will leak l (index of an item in a public list)
+// immediately (soundness property).
 type ResponseOpts struct {
 	Group group.Group    // group to which all elements in this opts belong
 	L     int            // index of a value from a public list
@@ -237,10 +261,17 @@ type ResponseOpts struct {
 }
 
 // Response is a prover response to the challenge.
+//
+// NB! Responses' slice returned is a slice of a group of scalars, and must be used
+// in [Verify] as is.
 func Response(challenge []byte, opts *ResponseOpts) ([][]byte, error) {
-	if len(opts.R_j) != len(opts.A_j) &&
-		len(opts.A_j) != len(opts.S_j) &&
-		len(opts.S_j) != len(opts.T_j) &&
+	if opts.L < 0 {
+		return nil, errors.New("negative public list index")
+	}
+
+	if len(opts.R_j) != len(opts.A_j) ||
+		len(opts.A_j) != len(opts.S_j) ||
+		len(opts.S_j) != len(opts.T_j) ||
 		len(opts.T_j) != len(opts.P_k) {
 		return nil, errors.New("invalid randomness")
 	}
@@ -264,6 +295,12 @@ func Response(challenge []byte, opts *ResponseOpts) ([][]byte, error) {
 			if _, err = s1.SetBytes(challenge); err != nil { // x
 				return nil, err
 			}
+			if s1.IsZero() {
+				return nil, errors.New("challenge cannot be a zero")
+			}
+			if opts.A_j[j-1].IsZero() {
+				return nil, fmt.Errorf("a_j%d cannot be a zero", j-1)
+			}
 			if _, err = s1.Add(opts.A_j[j-1]); err != nil { // f_j = 1*x + a_j
 				return nil, err
 			}
@@ -279,8 +316,17 @@ func Response(challenge []byte, opts *ResponseOpts) ([][]byte, error) {
 		if _, err = s1.SetBytes(challenge); err != nil { // x
 			return nil, err
 		}
+		if s1.IsZero() { // just in case (opts.L & mask) == 0
+			return nil, errors.New("challenge cannot be a zero")
+		}
+		if opts.R_j[j-1].IsZero() {
+			return nil, fmt.Errorf("r_j%d cannot be a zero", j-1)
+		}
 		if _, err = s1.Mul(opts.R_j[j-1]); err != nil { // r_j*x
 			return nil, err
+		}
+		if opts.S_j[j-1].IsZero() {
+			return nil, fmt.Errorf("s_j%d cannot be a zero", j-1)
 		}
 		if _, err = s1.Add(opts.S_j[j-1]); err != nil { // r_j*x + s_j
 			return nil, err
@@ -297,6 +343,9 @@ func Response(challenge []byte, opts *ResponseOpts) ([][]byte, error) {
 		if _, err = s1.Mul(opts.R_j[j-1]); err != nil { // r_j*(x-f_j)
 			return nil, err
 		}
+		if opts.T_j[j-1].IsZero() {
+			return nil, fmt.Errorf("t_j%d cannot be a zero", j-1)
+		}
 		if _, err = s1.Add(opts.T_j[j-1]); err != nil { // r_j*(x-f_j) + t_j
 			return nil, err
 		}
@@ -309,6 +358,9 @@ func Response(challenge []byte, opts *ResponseOpts) ([][]byte, error) {
 	// Calculate (n-1)Σ(k=0)(ρ_k * x^k)
 	for k := range n {
 		s1.SetZero()
+		if opts.P_k[k].IsZero() {
+			return nil, fmt.Errorf("p_k%d cannot be a zero", k)
+		}
 		if _, err = s1.Add(opts.P_k[k]); err != nil { // ρ_k
 			return nil, err
 		}
@@ -352,6 +404,18 @@ type VerifyOpts struct {
 
 // Verify verifies that prover knows an index l of a value from a public list.
 func Verify(commitment [][]byte, challenge []byte, response [][]byte, opts *VerifyOpts) error {
+	if err := (&pedersen.CommitmentKey{
+		Group: opts.Group,
+		G:     opts.G,
+		H:     opts.H,
+	}).Validate(); err != nil {
+		return fmt.Errorf("failed to validate Pedersen commitment key: %v", err)
+	}
+
+	if len(opts.List) == 0 {
+		return errors.New("empty public list")
+	}
+
 	N := len(opts.List)
 	n := 1
 	twoN := 2 // 2^n
@@ -383,6 +447,9 @@ func Verify(commitment [][]byte, challenge []byte, response [][]byte, opts *Veri
 		}
 		if _, err = s1.SetBytes(challenge); err != nil { // x
 			return err
+		}
+		if s1.IsZero() {
+			return errors.New("challenge cannot be a zero")
 		}
 		if _, err = E1.Scale(s1); err != nil { // c_lj^x
 			return err
@@ -519,7 +586,8 @@ func Verify(commitment [][]byte, challenge []byte, response [][]byte, opts *Veri
 		return err
 	}
 
-	if _, err = s3.SetBytes([]byte{uint8(n)}); err != nil { //nolint:gosec // n
+	// SECURITY NOTE: n truncation happens for N>2^255
+	if _, err = s3.SetBytes([]byte{uint8(n)}); err != nil {
 		return err
 	}
 	if _, err = s2.SetBytes(challenge); err != nil { // x
