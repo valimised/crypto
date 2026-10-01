@@ -2,10 +2,10 @@
 ROOTDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 # Golang version
-GOLANG_VERSION := 1.23.10
+GOLANG_VERSION := 1.27.2
 
 # golangci-lint version
-GOLANGCI_LINT_VERSION := 2.0.2
+GOLANGCI_LINT_VERSION := 2.14.0
 
 .PHONY: help
 help:
@@ -21,6 +21,10 @@ test:
 # Fuzz Go packages
 .PHONY: fuzz
 fuzz:
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzResponse -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyCommitment -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyChallenge -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyResponse -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
 
 # Lint Go packages
 .PHONY: lint

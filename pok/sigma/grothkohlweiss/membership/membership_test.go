@@ -774,3 +774,133 @@ func TestVerifyRegression(t *testing.T) {
 
 	fmt.Fprint(io.Discard, err)
 }
+
+func fuzzSetup(f *testing.F) ([][]byte, []byte, [][]byte, *ResponseOpts, *VerifyOpts) {
+	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
+	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
+	if err != nil {
+		f.Fatal(err)
+	}
+	x, err := G.ZeroScalar().SetReader(rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+	g, err := G.Identity().GeneratorScale(one)
+	if err != nil {
+		f.Fatal(err)
+	}
+	h, err := g.GeneratorScale(x)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	publicListSize := 1000
+	publicList := make([][]byte, publicListSize)
+	for i := range publicListSize {
+		publicList[i] = []byte("0000." + fmt.Sprintf("%03d", i))
+
+	}
+
+	choice := 998
+	r, err := G.ZeroScalar().SetReader(rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	commitment, respOpts, err := Commit(rand.Reader,
+		&CommitOpts{
+			Group: G,
+			G:     g,
+			H:     h,
+			R:     r.Bytes(),
+			L:     choice,
+			List:  publicList,
+		})
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	out := make([]byte, (G.OrderBitLen()+7)/8)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	resp, err := Response(out, respOpts)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	c, err := G.ZeroScalar().SetBytes(publicList[choice])
+	if err != nil {
+		f.Fatal(err)
+	}
+	opts := &pedersen.CommitmentKey{Group: G, G: g, H: h}
+	committedChoice, err := pedersen.Commit(c, r, opts)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	verifyOpts := &VerifyOpts{
+		Group:      G,
+		G:          g,
+		H:          h,
+		Commitment: committedChoice.Bytes(),
+		List:       publicList,
+	}
+
+	return commitment, out, resp, respOpts, verifyOpts
+}
+
+func FuzzResponse(f *testing.F) {
+	_, _, _, respOpts, _ := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Response(challenge, respOpts)
+	})
+}
+
+func FuzzVerifyCommitment(f *testing.F) {
+	comm, challenge, response, _, verifyOpts := fuzzSetup(f)
+
+	commitment2 := make([][]byte, len(comm))
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, commitment []byte) {
+		for i := range commitment2 {
+			commitment2[i] = commitment
+		}
+
+		Verify(commitment2, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyChallenge(f *testing.F) {
+	commitment, _, response, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyResponse(f *testing.F) {
+	commitment, challenge, resp, _, verifyOpts := fuzzSetup(f)
+
+	response2 := make([][]byte, len(resp))
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, response []byte) {
+		for i := range response2 {
+			response2[i] = response
+		}
+
+		Verify(commitment, challenge, response2, verifyOpts)
+	})
+}

@@ -1,6 +1,8 @@
 version: "2"
 linters:
   default: all
+  enable:
+    - gomodguard_v2
   disable:
     - cyclop # complex functions may exist
     - depguard # imports are already controlled by gofmt
@@ -8,11 +10,15 @@ linters:
     - err113 # use fmt.Errorf for formatted errors and errors.New for plain strings
     - errcheck # error may be left unchecked if it won't produce an error in runtime
     - errorlint # suggests to use %w for error formatting, which is not good, since %v should be used
+    - exhaustruct # structs may be partially initialized
+    - exhaustruct_v5 # new version of exhaustruct
     - funlen # no limits for function size
     - gochecknoglobals # global variables are safe, when they are private and initialized once, they improve performance
     - gocognit # complex functions may exist
+    - gomodguard # deprecated since v2.12.0
     - gocyclo # complex functions may exist
     - inamedparam # interface input parameters may be left unnamed
+    - noinlineerr # no risks to use inline error handling
     - interfacebloat # interface sometimes can be large, depends on a cryptographic primitive
     - ireturn # interface return parameters may be left unnamed
     - lll # no limits for source code line length
@@ -24,7 +30,8 @@ linters:
     - revive # variable names sometimes are too algorithm specific rather than Go semantic
     - varnamelen # no limits for variable name length
     - wsl # to eliminate such warnings 'if statements should only be cuddled with assignments'
-    - wrapcheck # not all errors should be wrapped into context specific error, some could be passed up the stack 
+    - wsl_v5 # new version of wsl
+    - wrapcheck # not all errors should be wrapped into context specific error, some could be passed up the stack
   settings:
     gocritic:
       enable-all: true
