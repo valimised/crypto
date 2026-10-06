@@ -962,3 +962,161 @@ func TestVerifyRegression(t *testing.T) {
 
 	fmt.Fprint(io.Discard, err)
 }
+
+func fuzzSetup(f *testing.F) ([]byte, []byte, []byte, *ResponseOpts, *VerifyOpts) {
+	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
+
+	plain := []byte("0000.102")
+	m := G.ZeroScalar() // plaintext as scalar
+	_, err := m.SetBytes(plain)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	x := G.ZeroScalar()
+	if _, err := x.SetReader(rand.Reader); err != nil { // private key
+		f.Fatal(err)
+	}
+
+	r := G.ZeroScalar()
+	if _, err := r.SetReader(rand.Reader); err != nil { // encryption randomness
+		f.Fatal(err)
+	}
+
+	// Lifted ElGamal
+	c1 := G.Identity()
+	_, err = c1.GeneratorScale(r) // c1 = g^r
+	if err != nil {
+		f.Fatal(err)
+	}
+	xrm := G.ZeroScalar()
+	if _, err := xrm.Add(r); err != nil { // r
+		f.Fatal(err)
+	}
+	if _, err := xrm.Mul(x); err != nil { // rx
+		f.Fatal(err)
+	}
+	if _, err := xrm.Add(m); err != nil { // rx + m
+		f.Fatal(err)
+	}
+	c2 := G.Identity()
+	if _, err = c2.GeneratorScale(xrm); err != nil { // c2 = g^(rx + m)
+		f.Fatal(err)
+	}
+	one := G.ZeroScalar()
+	if _, err := one.SetBytes([]byte{0x01}); err != nil {
+		f.Fatal(err)
+	}
+	g := G.Identity()
+	if _, err := g.GeneratorScale(one); err != nil { // g
+		f.Fatal(err)
+	}
+	y := G.Identity()
+	if _, err := y.GeneratorScale(x); err != nil { // public key = g^x
+		f.Fatal(err)
+	}
+
+	// Pedersen commitment
+	h := G.Identity()
+	xx, err := x.SetReader(rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	if _, err := h.GeneratorScale(xx); err != nil { // Pedersen random generator h
+		f.Fatal(err)
+	}
+
+	k := G.ZeroScalar()
+	if _, err := k.SetReader(rand.Reader); err != nil { // Pedersen commitment randomness
+		f.Fatal(err)
+	}
+
+	com, err := pedersen.Commit(m, k, &pedersen.CommitmentKey{Group: G, G: g, H: h}) // commitment = (g^m, h^k)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	// Proof that message in a ciphertext is the same as in a commitment
+	opts := &CommitOpts{
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
+	}
+	commitment, respOpts, err := Commit(rand.Reader, opts)
+
+	out := make([]byte, (G.OrderBitLen()+7)/8)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	resp, err := Response(out, respOpts)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	verifyOpts := &VerifyOpts{
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		Ciphertext: &elgamal.Ciphertext{
+			C1: c1,
+			C2: c2,
+		},
+		C3: com.Bytes(),
+	}
+
+	return commitment, out, resp, respOpts, verifyOpts
+}
+
+func FuzzResponse(f *testing.F) {
+	_, _, _, respOpts, _ := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Response(challenge, respOpts)
+	})
+}
+
+func FuzzVerifyCommitment(f *testing.F) {
+	_, challenge, response, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, commitment []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyChallenge(f *testing.F) {
+	commitment, _, response, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyResponse(f *testing.F) {
+	commitment, challenge, _, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, response []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
