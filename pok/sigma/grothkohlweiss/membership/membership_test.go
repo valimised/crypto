@@ -14,23 +14,23 @@ import (
 	"gitlab.com/tivi-io/crypto/prng/dprng"
 )
 
-func ExampleProveVerifyWhenActualChoiceAndCommittedChoiceDiffer() {
+func TestProveVerifyWhenActualChoiceAndCommittedChoiceDiffer(t *testing.T) {
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
 	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	x, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	g, err := G.Identity().GeneratorScale(one)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	h, err := g.GeneratorScale(x)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	publicListSize := 16
@@ -44,15 +44,15 @@ func ExampleProveVerifyWhenActualChoiceAndCommittedChoiceDiffer() {
 	choice := 2                                       // I have chosen index 2 out of a public list of 16 choices
 	c, err := G.ZeroScalar().SetBytes(publicList[15]) // note that I commit index 15
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	r, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	committedChoice, err := pedersen.Commit(c, r, opts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	commitment, respOpts, err := Commit(rand.Reader,
@@ -65,23 +65,23 @@ func ExampleProveVerifyWhenActualChoiceAndCommittedChoiceDiffer() {
 			List:  publicList,
 		})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
 	byteLen := len(commitment[0])
-	com := make([]byte, byteLen)
+	com := make([]byte, byteLen*len(commitment))
 	for i := range commitment {
 		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
 	}
 	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	response, err := Response(out, respOpts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	err = Verify(commitment, out, response, &VerifyOpts{
@@ -92,28 +92,28 @@ func ExampleProveVerifyWhenActualChoiceAndCommittedChoiceDiffer() {
 		List:       publicList,
 	})
 
-	fmt.Println(err)
-	// Output:
-	// verification step 3 failed
+	if err.Error() != "verification step 3 failed" {
+		t.Fatalf("expected error='verification step 3 failed', got=%v", err)
+	}
 }
 
-func ExampleProveVerifyWhenActualChoiceIsNotInAPublicList() {
+func TestProveVerifyWhenActualChoiceIsNotInAPublicList(t *testing.T) {
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
 	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	x, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	g, err := G.Identity().GeneratorScale(one)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	h, err := g.GeneratorScale(x)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	publicListSize := 1000
@@ -126,16 +126,16 @@ func ExampleProveVerifyWhenActualChoiceIsNotInAPublicList() {
 	opts := &pedersen.CommitmentKey{Group: G, G: g, H: h}
 	c, err := G.ZeroScalar().SetBytes(publicList[2]) // note that committed choice is within a public list
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	choice := 1001 // but choice is out of a list (1001 out of 1000)
 	r, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	committedChoice, err := pedersen.Commit(c, r, opts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	commitment, respOpts, err := Commit(rand.Reader,
@@ -148,23 +148,23 @@ func ExampleProveVerifyWhenActualChoiceIsNotInAPublicList() {
 			List:  publicList,
 		})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
 	byteLen := len(commitment[0])
-	com := make([]byte, byteLen)
+	com := make([]byte, byteLen*len(commitment))
 	for i := range commitment {
 		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
 	}
 	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	response, err := Response(out, respOpts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	err = Verify(commitment, out, response, &VerifyOpts{
@@ -175,28 +175,28 @@ func ExampleProveVerifyWhenActualChoiceIsNotInAPublicList() {
 		List:       publicList,
 	})
 
-	fmt.Println(err)
-	// Output:
-	// verification step 3 failed
+	if err.Error() != "verification step 3 failed" {
+		t.Fatalf("expected error='verification step 3 failed', got=%v", err)
+	}
 }
 
-func ExampleProveVerifyWhenCommittedChoiceIsNotInAPublicList() {
+func TestProveVerifyWhenCommittedChoiceIsNotInAPublicList(t *testing.T) {
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
 	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	x, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	g, err := G.Identity().GeneratorScale(one)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	h, err := g.GeneratorScale(x)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	publicListSize := 3
@@ -210,15 +210,15 @@ func ExampleProveVerifyWhenCommittedChoiceIsNotInAPublicList() {
 	choice := 1                                           // choice is within a public list
 	c, err := G.ZeroScalar().SetBytes([]byte("0000.003")) // but committed choice is not in a public list
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	r, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	committedChoice, err := pedersen.Commit(c, r, opts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	commitment, respOpts, err := Commit(rand.Reader,
@@ -231,23 +231,23 @@ func ExampleProveVerifyWhenCommittedChoiceIsNotInAPublicList() {
 			List:  publicList,
 		})
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
 	byteLen := len(commitment[0])
-	com := make([]byte, byteLen)
+	com := make([]byte, byteLen*len(commitment))
 	for i := range commitment {
 		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
 	}
 	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	response, err := Response(out, respOpts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	err = Verify(commitment, out, response, &VerifyOpts{
@@ -258,9 +258,9 @@ func ExampleProveVerifyWhenCommittedChoiceIsNotInAPublicList() {
 		List:       publicList,
 	})
 
-	fmt.Println(err)
-	// Output:
-	// verification step 3 failed
+	if err.Error() != "verification step 3 failed" {
+		t.Fatalf("expected error='verification step 3 failed', got=%v", err)
+	}
 }
 
 func TestProveVerify(t *testing.T) {
@@ -355,19 +355,19 @@ func BenchmarkCommit(b *testing.B) {
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
 	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 	x, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 	g, err := G.Identity().GeneratorScale(one)
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 	h, err := g.GeneratorScale(x)
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 
 	publicListSize := 1000
@@ -380,7 +380,7 @@ func BenchmarkCommit(b *testing.B) {
 	choice := 998
 	r, err := G.ZeroScalar().SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		b.Fatal(err)
 	}
 
 	var commitment [][]byte
@@ -685,7 +685,7 @@ func BenchmarkVerify(b *testing.B) {
 	fmt.Fprint(io.Discard, err)
 }
 
-func TestResponseVerify(t *testing.T) {
+func TestVerifyRegression(t *testing.T) {
 	expected := 104.0
 
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
@@ -773,4 +773,134 @@ func TestResponseVerify(t *testing.T) {
 	}
 
 	fmt.Fprint(io.Discard, err)
+}
+
+func fuzzSetup(f *testing.F) ([][]byte, []byte, [][]byte, *ResponseOpts, *VerifyOpts) {
+	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
+	one, err := G.ZeroScalar().SetBytes([]byte{0x01})
+	if err != nil {
+		f.Fatal(err)
+	}
+	x, err := G.ZeroScalar().SetReader(rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+	g, err := G.Identity().GeneratorScale(one)
+	if err != nil {
+		f.Fatal(err)
+	}
+	h, err := g.GeneratorScale(x)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	publicListSize := 1000
+	publicList := make([][]byte, publicListSize)
+	for i := range publicListSize {
+		publicList[i] = []byte("0000." + fmt.Sprintf("%03d", i))
+
+	}
+
+	choice := 998
+	r, err := G.ZeroScalar().SetReader(rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	commitment, respOpts, err := Commit(rand.Reader,
+		&CommitOpts{
+			Group: G,
+			G:     g,
+			H:     h,
+			R:     r.Bytes(),
+			L:     choice,
+			List:  publicList,
+		})
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	out := make([]byte, (G.OrderBitLen()+7)/8)
+	byteLen := len(commitment[0])
+	com := make([]byte, byteLen*len(commitment))
+	for i := range commitment {
+		subtle.ConstantTimeCopy(1, com[i*byteLen:(i*byteLen)+byteLen], commitment[i])
+	}
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(com), G, out)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	resp, err := Response(out, respOpts)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	c, err := G.ZeroScalar().SetBytes(publicList[choice])
+	if err != nil {
+		f.Fatal(err)
+	}
+	opts := &pedersen.CommitmentKey{Group: G, G: g, H: h}
+	committedChoice, err := pedersen.Commit(c, r, opts)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	verifyOpts := &VerifyOpts{
+		Group:      G,
+		G:          g,
+		H:          h,
+		Commitment: committedChoice.Bytes(),
+		List:       publicList,
+	}
+
+	return commitment, out, resp, respOpts, verifyOpts
+}
+
+func FuzzResponse(f *testing.F) {
+	_, _, _, respOpts, _ := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Response(challenge, respOpts)
+	})
+}
+
+func FuzzVerifyCommitment(f *testing.F) {
+	comm, challenge, response, _, verifyOpts := fuzzSetup(f)
+
+	commitment2 := make([][]byte, len(comm))
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, commitment []byte) {
+		for i := range commitment2 {
+			commitment2[i] = commitment
+		}
+
+		Verify(commitment2, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyChallenge(f *testing.F) {
+	commitment, _, response, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyResponse(f *testing.F) {
+	commitment, challenge, resp, _, verifyOpts := fuzzSetup(f)
+
+	response2 := make([][]byte, len(resp))
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, response []byte) {
+		for i := range response2 {
+			response2[i] = response
+		}
+
+		Verify(commitment, challenge, response2, verifyOpts)
+	})
 }
