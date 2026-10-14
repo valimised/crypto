@@ -25,6 +25,10 @@ fuzz:
 	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyCommitment -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
 	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyChallenge -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
 	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyResponse -fuzztime=60s /gofuzz/pok/sigma/grothkohlweiss/membership/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzResponse -fuzztime=60s /gofuzz/pok/sigma/pet/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyCommitment -fuzztime=60s /gofuzz/pok/sigma/pet/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyChallenge -fuzztime=60s /gofuzz/pok/sigma/pet/
+	docker run --rm -v $(ROOTDIR):/gofuzz -w /gofuzz golang:$(GOLANG_VERSION) go test -fuzz=FuzzVerifyResponse -fuzztime=60s /gofuzz/pok/sigma/pet/
 
 # Lint Go packages
 .PHONY: lint
