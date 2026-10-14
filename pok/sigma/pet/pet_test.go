@@ -6,6 +6,8 @@ import (
 	"io"
 	"testing"
 
+	"gitlab.com/tivi-io/crypto/elgamal"
+	"gitlab.com/tivi-io/crypto/elgamal/lifted"
 	"gitlab.com/tivi-io/crypto/group/nistec"
 	"gitlab.com/tivi-io/crypto/hash"
 	"gitlab.com/tivi-io/crypto/pok/commitment/pedersen"
@@ -13,123 +15,137 @@ import (
 	"gitlab.com/tivi-io/crypto/prng/dprng"
 )
 
-func ExampleProveVerifyWhenPlaintextInCiphertextAndCommitmentDiffer() {
+func TestProveVerifyWhenPlaintextInCiphertextAndCommitmentDiffer(t *testing.T) {
 	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
 
 	plain := []byte("0000.102")
 	m := G.ZeroScalar() // plaintext as scalar
 	_, err := m.SetBytes(plain)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	x := G.ZeroScalar()
 	if _, err := x.SetReader(rand.Reader); err != nil { // private key
-		panic(err)
+		t.Fatal(err)
 	}
 
 	r := G.ZeroScalar()
 	if _, err := r.SetReader(rand.Reader); err != nil { // encryption randomness
-		panic(err)
+		t.Fatal(err)
 	}
 
 	// Lifted ElGamal
 	c1 := G.Identity()
 	_, err = c1.GeneratorScale(r) // c1 = g^r
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	xrm := G.ZeroScalar()
 	if _, err := xrm.Add(r); err != nil { // r
-		panic(err)
+		t.Fatal(err)
 	}
 	if _, err := xrm.Mul(x); err != nil { // rx
-		panic(err)
+		t.Fatal(err)
 	}
 	if _, err := xrm.Add(m); err != nil { // rx + m
-		panic(err)
+		t.Fatal(err)
 	}
 	c2 := G.Identity()
 	if _, err = c2.GeneratorScale(xrm); err != nil { // c2 = g^(rx + m)
-		panic(err)
+		t.Fatal(err)
 	}
 	one := G.ZeroScalar()
 	if _, err := one.SetBytes([]byte{0x01}); err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	g := G.Identity()
 	if _, err := g.GeneratorScale(one); err != nil { // g
-		panic(err)
+		t.Fatal(err)
 	}
 	y := G.Identity()
 	if _, err := y.GeneratorScale(x); err != nil { // public key = g^x
-		panic(err)
+		t.Fatal(err)
 	}
 
 	// Pedersen commitment
 	h := G.Identity()
 	xx, err := x.SetReader(rand.Reader)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	if _, err := h.GeneratorScale(xx); err != nil { // Pedersen random generator h
-		panic(err)
+		t.Fatal(err)
 	}
 
 	k := G.ZeroScalar()
 	if _, err := k.SetReader(rand.Reader); err != nil { // Pedersen commitment randomness
-		panic(err)
+		t.Fatal(err)
 	}
 
 	mm, err := G.ZeroScalar().SetBytes([]byte("0000.103")) // NB! We have encrypted 0000.102, but commit 0000.103
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	com, err := pedersen.Commit(mm, k, &pedersen.CommitmentKey{Group: G, G: g, H: h}) // commitment = (g^m, h^k)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
 	}
 	commitment, respOpts, err := Commit(rand.Reader, opts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	out := make([]byte, (G.OrderBitLen()+7)/8)
 	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	resp, err := Response(out, respOpts)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	opts2 := &VerifyOpts{
-		G:  G,
-		PK: y,
-		H:  h,
-		C1: c1,
-		C2: c2,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		Ciphertext: &elgamal.Ciphertext{
+			C1: c1,
+			C2: c2,
+		},
 		C3: com.Bytes(),
 	}
 
 	err = Verify(commitment, out, resp, opts2)
 
-	fmt.Println(err)
-	// Output:
-	// invalid commitment d_3
+	if err.Error() != "invalid commitment d_3" {
+		t.Fatalf("expected error='invalid commitment d_3', got=%v", err)
+	}
 }
 
 func TestProveVerify(t *testing.T) {
@@ -208,9 +224,15 @@ func TestProveVerify(t *testing.T) {
 
 	// Prover --> Verifier
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -236,11 +258,19 @@ func TestProveVerify(t *testing.T) {
 	// Prover <-- Verifier (note that in case of non-interactive proof, Challenge is called on Verifier side as well
 	// to generate a challenge out of provided Prover commitments)
 	opts2 := &VerifyOpts{
-		G:  G,
-		PK: y,
-		H:  h,
-		C1: c1,
-		C2: c2,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		Ciphertext: &elgamal.Ciphertext{
+			C1: c1,
+			C2: c2,
+		},
 		C3: com.Bytes(),
 	}
 	if err = Verify(commitment, out, resp, opts2); err != nil {
@@ -324,9 +354,15 @@ func BenchmarkCommit(b *testing.B) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -423,9 +459,15 @@ func TestCommitRegression(t *testing.T) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -518,9 +560,15 @@ func BenchmarkResponse(b *testing.B) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -624,9 +672,15 @@ func TestResponseRegression(t *testing.T) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -725,9 +779,15 @@ func BenchmarkVerify(b *testing.B) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -746,11 +806,19 @@ func BenchmarkVerify(b *testing.B) {
 	}
 
 	verifyOpts := &VerifyOpts{
-		G:  G,
-		PK: y,
-		H:  h,
-		C1: c1,
-		C2: c2,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		Ciphertext: &elgamal.Ciphertext{
+			C1: c1,
+			C2: c2,
+		},
 		C3: com.Bytes(),
 	}
 
@@ -843,9 +911,15 @@ func TestVerifyRegression(t *testing.T) {
 
 	// Proof that message in a ciphertext is the same as in a commitment
 	opts := &CommitOpts{
-		G:  G,
-		PK: y,
-		H:  h,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
 		R:  r.Bytes(),
 		R_: k.Bytes(),
 		M:  m.Bytes(),
@@ -864,11 +938,19 @@ func TestVerifyRegression(t *testing.T) {
 	}
 
 	verifyOpts := &VerifyOpts{
-		G:  G,
-		PK: y,
-		H:  h,
-		C1: c1,
-		C2: c2,
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		Ciphertext: &elgamal.Ciphertext{
+			C1: c1,
+			C2: c2,
+		},
 		C3: com.Bytes(),
 	}
 
@@ -879,4 +961,162 @@ func TestVerifyRegression(t *testing.T) {
 	}
 
 	fmt.Fprint(io.Discard, err)
+}
+
+func fuzzSetup(f *testing.F) ([]byte, []byte, []byte, *ResponseOpts, *VerifyOpts) {
+	G := nistec.NewP384Group(nistec.Params{PointEncodingBits: 10})
+
+	plain := []byte("0000.102")
+	m := G.ZeroScalar() // plaintext as scalar
+	_, err := m.SetBytes(plain)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	x := G.ZeroScalar()
+	if _, err := x.SetReader(rand.Reader); err != nil { // private key
+		f.Fatal(err)
+	}
+
+	r := G.ZeroScalar()
+	if _, err := r.SetReader(rand.Reader); err != nil { // encryption randomness
+		f.Fatal(err)
+	}
+
+	// Lifted ElGamal
+	c1 := G.Identity()
+	_, err = c1.GeneratorScale(r) // c1 = g^r
+	if err != nil {
+		f.Fatal(err)
+	}
+	xrm := G.ZeroScalar()
+	if _, err := xrm.Add(r); err != nil { // r
+		f.Fatal(err)
+	}
+	if _, err := xrm.Mul(x); err != nil { // rx
+		f.Fatal(err)
+	}
+	if _, err := xrm.Add(m); err != nil { // rx + m
+		f.Fatal(err)
+	}
+	c2 := G.Identity()
+	if _, err = c2.GeneratorScale(xrm); err != nil { // c2 = g^(rx + m)
+		f.Fatal(err)
+	}
+	one := G.ZeroScalar()
+	if _, err := one.SetBytes([]byte{0x01}); err != nil {
+		f.Fatal(err)
+	}
+	g := G.Identity()
+	if _, err := g.GeneratorScale(one); err != nil { // g
+		f.Fatal(err)
+	}
+	y := G.Identity()
+	if _, err := y.GeneratorScale(x); err != nil { // public key = g^x
+		f.Fatal(err)
+	}
+
+	// Pedersen commitment
+	h := G.Identity()
+	xx, err := x.SetReader(rand.Reader)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	if _, err := h.GeneratorScale(xx); err != nil { // Pedersen random generator h
+		f.Fatal(err)
+	}
+
+	k := G.ZeroScalar()
+	if _, err := k.SetReader(rand.Reader); err != nil { // Pedersen commitment randomness
+		f.Fatal(err)
+	}
+
+	com, err := pedersen.Commit(m, k, &pedersen.CommitmentKey{Group: G, G: g, H: h}) // commitment = (g^m, h^k)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	// Proof that message in a ciphertext is the same as in a commitment
+	opts := &CommitOpts{
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		R:  r.Bytes(),
+		R_: k.Bytes(),
+		M:  m.Bytes(),
+	}
+	commitment, respOpts, err := Commit(rand.Reader, opts)
+
+	out := make([]byte, (G.OrderBitLen()+7)/8)
+	err = nizk.Challenge(dprng.New(hash.SHA256).Seed(commitment), G, out)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	resp, err := Response(out, respOpts)
+	if err != nil {
+		f.Fatal(err)
+	}
+
+	verifyOpts := &VerifyOpts{
+		PK: &lifted.PublicKey{
+			G: G,
+			Y: y,
+		},
+		CK: &pedersen.CommitmentKey{
+			Group: G,
+			G:     g,
+			H:     h,
+		},
+		Ciphertext: &elgamal.Ciphertext{
+			C1: c1,
+			C2: c2,
+		},
+		C3: com.Bytes(),
+	}
+
+	return commitment, out, resp, respOpts, verifyOpts
+}
+
+func FuzzResponse(f *testing.F) {
+	_, _, _, respOpts, _ := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Response(challenge, respOpts)
+	})
+}
+
+func FuzzVerifyCommitment(f *testing.F) {
+	_, challenge, response, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, commitment []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyChallenge(f *testing.F) {
+	commitment, _, response, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, challenge []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
+}
+
+func FuzzVerifyResponse(f *testing.F) {
+	commitment, challenge, _, _, verifyOpts := fuzzSetup(f)
+
+	// Only catch panics
+	f.Fuzz(func(t *testing.T, response []byte) {
+		Verify(commitment, challenge, response, verifyOpts)
+	})
 }
